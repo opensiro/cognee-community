@@ -56,6 +56,37 @@ from cognee_community_connector_opensiro_vsm.audit import audit_dataset
 # assert report["status"] == "PASS"
 ```
 
+## Compatibility checks
+
+The source review package includes `tests/test_sdk_contract.py`, which fails
+if the **Cognee 1.6.4** native graph/provenance/lexical or local dataset lookup
+APIs used by this connector change unexpectedly. It can be run offline with the
+rest of the Python tests. These checks are API-shape checks, **not** a guarantee
+that internal Cognee APIs will remain stable in future versions.
+
+For a complete **clean Python 3.11 dependency-resolution check** (not yet
+verified by OpenSiro on the dev-alpha CPU host), use an actual Python 3.11
+interpreter and the built wheel in a brand-new virtual environment:
+
+```bash
+python3.11 -m venv /tmp/opensiro-cognee-py311
+/tmp/opensiro-cognee-py311/bin/python -m pip install \
+  /path/to/cognee_community_connector_opensiro_vsm-0.1.0-py3-none-any.whl
+/tmp/opensiro-cognee-py311/bin/python -m pip check
+/tmp/opensiro-cognee-py311/bin/python -m cognee_community_connector_opensiro_vsm \
+  validate --repo /path/to/vsm-harness-index \
+  --commit 35bc8ab9ed4b42bb8955a6f0684a4f5529a05424
+```
+
+**Actual completed wheel validation:** an independent Python 3.12 virtual
+environment installed the built wheel **without fetching dependencies**, using
+Cognee 1.6.4/DLT 1.30.0 already installed in a separate existing environment.
+This confirmed package import, pinned-source validation (533 included), native
+3-assessment import (69 graph nodes, 48 edges, 18 literal grades), and an
+independent new-process audit. Python 3.11 source syntax parsing passed, but a
+real Python 3.11 interpreter and fresh dependency installation were **not**
+available on the test host. Do not represent this as Python 3.11 runtime PASS.
+
 ## Boundaries
 
 This is a **fresh-only, single-host, graph-only** connector. It does not overwrite datasets, delete old records, run a hosted control plane, create embeddings, or perform automatic updates. Every attempt requires a different dataset name and the marker directory must be preserved alongside the Cognee store. Loss of that directory defeats the retry fence.
