@@ -1,0 +1,141 @@
+name: OpenSiro VSM Source — Python 3.11 Clean Wheel
+
+on:
+  push:
+    branches:
+      - feat/opensiro-vsm-source-review
+    paths:
+      - .github/workflows/opensiro-vsm-py311.yml
+      - packages/connector/opensiro-vsm/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opensiro-vsm-py311-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clean-python311:
+    if: github.repository == 'opensiro/cognee-community'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    env:
+      PACKAGE_DIR: packages/connector/opensiro-vsm
+      PIN: 35bc8ab9ed4b42bb8955a6f0684a4f5529a05424
+      COGNEE_SKIP_CONNECTION_TEST: "true"
+      TELEMETRY_DISABLED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - name: Checkout OpenSiro fork branch only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Provision real Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheel from review candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python --version
+          python -c 'import sys; assert sys.version_info[:2] == (3, 11)'
+          python -m pip wheel --no-deps --wheel-dir "$RUNNER_TEMP/b20-wheels" "./$PACKAGE_DIR"
+          ls -lh "$RUNNER_TEMP/b20-wheels/"
+
+      - name: Clean venv — resolve every declared dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/b20-python311"
+          PY="$RUNNER_TEMP/b20-python311/bin/python"
+          "$PY" --version
+          "$PY" -m pip install --no-cache-dir "$RUNNER_TEMP/b20-wheels"/cognee_community_connector_opensiro_vsm-*.whl
+          "$PY" -m pip check
+          "$PY" - <<'PY'
+          import sys
+          import cognee
+          import importlib.metadata as metadata
+          from cognee_community_connector_opensiro_vsm import source
+          assert sys.version_info[:2] == (3, 11)
+          assert metadata.version("cognee") == "1.6.4"
+          assert metadata.version("cognee-community-connector-opensiro-vsm") == "0.1.0"
+          assert "/b20-python311/" in source.__file__
+          print("B20_PY311_CLEAN_DEPS_AND_WHEEL_PASS", metadata.version("cognee"))
+          PY
+
+      - name: Focused SDK contract and source unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/b20-python311/bin/python" -m unittest discover -s "$PACKAGE_DIR/tests" -v
+
+      - name: Clone read-only pinned OpenSiro Index
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet https://github.com/opensiro/vsm-harness-index.git "$RUNNER_TEMP/b20-index"
+          git -C "$RUNNER_TEMP/b20-index" checkout --quiet "$PIN"
+          test "$(git -C "$RUNNER_TEMP/b20-index" rev-parse HEAD)" = "$PIN"
+
+      - name: Validate pinned canonical source using installed wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/b20-python311/bin/python" -m cognee_community_connector_opensiro_vsm \
+            validate --repo "$RUNNER_TEMP/b20-index" --commit "$PIN"
+
+      - name: Fresh CPU graph-only Cognee ingestion via installed wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/b20-python311/bin/python" "$PACKAGE_DIR/examples/example.py" \
+            --repo "$RUNNER_TEMP/b20-index" --commit "$PIN" \
+            --store-root "$RUNNER_TEMP/b20-store" --dataset b20-python311-canonical \
+            --ids goose,langflow,openjiuwen-core --lexical
+
+      - name: Independent process — verify graph, source provenance and claim
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/b20-python311/bin/python" - <<'PY'
+          import asyncio
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          store = root / "b20-store"
+          os.environ.update(
+              SYSTEM_ROOT_DIRECTORY=str(store / "system"),
+              DATA_ROOT_DIRECTORY=str(store / "data"),
+              DLT_DATA_DIR=str(store / "dlt"),
+              PIPELINES_DIR=str(store / "dlt/pipelines"),
+              COGNEE_SKIP_CONNECTION_TEST="true",
+              TELEMETRY_DISABLED="1",
+          )
+          from cognee_community_connector_opensiro_vsm.source import read_snapshot
+          from cognee_community_connector_opensiro_vsm.audit import audit_dataset
+
+          async def main():
+              snap = read_snapshot(root / "b20-index", os.environ["PIN"])
+              result = await audit_dataset(
+                  snap, ("goose", "langflow", "openjiuwen-core"),
+                  "b20-python311-canonical", "opensiro_vsm_canonical_example",
+                  lexical=True,
+              )
+              assert result["status"] == "PASS"
+              assert result["documents"] == 3
+              assert result["graph_nodes"] == 69
+              assert result["graph_edges"] == 48
+              assert result["exact_grades"] == 18
+              assert result["source_refs_exact"]
+              assert len(list((store / "stage-attempts").glob("*.json"))) == 1
+              print("B20_PY311_INDEPENDENT_NATIVE_AUDIT_PASS",
+                    result["documents"], result["graph_nodes"],
+                    result["graph_edges"], result["exact_grades"])
+
+          asyncio.run(main())
+          PY
