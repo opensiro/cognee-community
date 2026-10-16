@@ -164,9 +164,25 @@ async def source_data(dataset: str, tag: str):
 
 
 async def ingest_fresh(
-    snapshot: Snapshot, selected: tuple[str, ...], dataset: str, tag: str, lexical: bool = False
+    snapshot: Snapshot,
+    selected: tuple[str, ...],
+    dataset: str,
+    tag: str,
+    lexical: bool = False,
+    *,
+    test_only_fail_after_graph_records: int | None = None,
 ):
-    """Fresh-only smoke. No replacement, interrupted rollback, or hosted runtime."""
+    """Fresh-only smoke. No replacement, interrupted rollback, or hosted runtime.
+
+    The test-only fault is a controlled exception after N fully written graph records.
+    It MUST NOT be treated as a process-crash or power-loss simulation.
+    """
+    if test_only_fail_after_graph_records is not None and (
+        type(test_only_fail_after_graph_records) is not int
+        or test_only_fail_after_graph_records < 1
+        or test_only_fail_after_graph_records > len(selected)
+    ):
+        raise SourceError("Invalid test-only graph-write failure boundary")
     if not selected or len(selected) != len(set(selected)):
         raise SourceError("selected set empty or duplicated")
     records = [snapshot.accepted[x] for x in selected]
@@ -196,7 +212,7 @@ async def ingest_fresh(
     if len(all_rows) != len(records) or set(docs) != {r.external_id for r in records}:
         raise SourceError("Incomplete document admission; stopping before graph projection")
     async with set_database_global_context_variables(ds.id, user.id, permission_type="write"):
-        for r in records:
+        for write_index, r in enumerate(records, start=1):
             ctx = PipelineContext(
                 user=user,
                 dataset=ds,
@@ -207,6 +223,10 @@ async def ingest_fresh(
             await add_data_points([typed_model(r, snapshot.commit)], graph_only=True, ctx=ctx)
             if lexical:
                 await add_data_points(chunks(r), graph_only=True, ctx=ctx)
+            if write_index == test_only_fail_after_graph_records:
+                raise RuntimeError(
+                    "TEST_ONLY_INJECTED_GRAPH_INTERRUPTION: staging remains incomplete"
+                )
     async with set_database_global_context_variables(ds.id, user.id, permission_type="read"):
         engine = await get_graph_engine()
         nodes, edges = await engine.get_graph_data()

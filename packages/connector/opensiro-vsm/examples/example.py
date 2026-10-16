@@ -19,11 +19,17 @@ def main():
     cli.add_argument("--commit", required=True)
     cli.add_argument("--store-root", type=Path, required=True)
     cli.add_argument("--dataset", required=True)
-    cli.add_argument("--ids", required=True, help="Comma-separated accepted harness IDs")
+    selection = cli.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--ids", help="Comma-separated accepted harness IDs")
+    selection.add_argument("--all", action="store_true", help="Import every accepted assessment")
     cli.add_argument("--lexical", action="store_true")
     args = cli.parse_args()
     snap = read_snapshot(args.repo, args.commit)  # source contract before any SDK calls
-    selected = tuple(x.strip() for x in args.ids.split(",") if x.strip())
+    selected = (
+        tuple(sorted(snap.accepted))
+        if args.all
+        else tuple(x.strip() for x in args.ids.split(",") if x.strip())
+    )
     if not selected or not all(x in snap.accepted for x in selected):
         cli.error("all --ids must be accepted in the pinned Index snapshot")
     root = args.store_root.resolve()

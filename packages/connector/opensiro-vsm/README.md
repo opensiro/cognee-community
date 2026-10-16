@@ -47,6 +47,8 @@ uv run python examples/example.py \
   --lexical
 ```
 
+For a full accepted snapshot, use `--all` in place of `--ids` (a larger CPU/disk workload). It includes only canonically `included` assessments and never `excluded` or `proposed` records.
+
 This is an intentionally **fresh-only local dataset** import. It refuses nonempty datasets rather than risk erasing or mixing previous revisions. `--lexical` adds 6 `DocumentChunk` objects per assessment using its S1–S5 sections, enabling native `CHUNKS_LEXICAL` BM25. All `VSMFunction` objects can be recovered with `cognee.search(query_type=SearchType.CYPHER)`. No LLM, embeddings or GPU are called in this workflow (`graph_only=True`).
 
 The full 533 accepted assessment corpus passed a single integrated Cognee 1.6.4 local CPU run in the original B10 research; the new package still needs its own complete acceptance run in a clean environment. [Research receipts](https://github.com/opensiro/vsm-harness-index/issues/1598).
@@ -56,6 +58,24 @@ The full 533 accepted assessment corpus passed a single integrated Cognee 1.6.4 
 Optional `activation.py` and `generation.py` provide **single-host research primitives** for staging a source generation in a **new dataset**, independently auditing exact grade/content SHA/review SHA/native `source_ref:v1` and chunk `source_ref:v2`, and publishing a small atomic local `active.json` pointer with a compare-and-swap lease.
 
 Do not directly run these against a shared/production instance: no distributed locking, automatic recovery of interrupted Cognee imports, dataset garbage collection, credential isolation, reader migration, or proof of power-loss resilience is provided. See the [OpenSiro B11 bounded result](https://github.com/opensiro/vsm-harness-index/issues/1598). B11 tested two and then three real historical records, **not** two full Index generations.
+
+## B13: bounded incomplete-stage recovery evidence
+
+A **controlled Python exception** after the first complete graph record (test-only
+`ingest_fresh(..., test_only_fail_after_graph_records=1)`) left a deliberately
+incomplete local stage with **3 ingested Data documents** but only **1 of 3
+assessment graphs** (26 nodes, 19 edges). The independent `audit_dataset`
+rejected that stage; reopening the store in a separate process preserved the
+same incomplete result. Attempting to call `ingest_fresh` on the same dataset
+was refused before any write. A **different new dataset** imported and audited
+all three assessments successfully (69 nodes, 48 edges, 18/18 literal grades)
+and was then selected by the local single-host active-pointer protocol.
+
+This test supports **fail-closed detection + recover-by-fresh-generation**.
+It does *not* prove that Cognee automatically resumes an interrupted partial
+import or that process hard-kill, power loss, distributed readers and backend
+failure recovery are handled. Never interpret the presence of Data documents
+or a successful pipeline return as equivalent to independent graph admission.
 
 ## Evidence and search boundaries
 

@@ -1,9 +1,10 @@
 """CPU-only sanity tests for typed source and lexical section projection."""
 
+import asyncio
 import unittest
 
-from cognee_community_connector_opensiro_vsm.native import chunks, typed_model
-from cognee_community_connector_opensiro_vsm.source import parse_assessment
+from cognee_community_connector_opensiro_vsm.native import chunks, ingest_fresh, typed_model
+from cognee_community_connector_opensiro_vsm.source import SourceError, parse_assessment
 
 SHA = "a" * 40
 DOC = """---
@@ -59,6 +60,19 @@ class NativeContracts(unittest.TestCase):
         self.assertEqual({x.document_name for x in items}, {"sample.md"})
         self.assertTrue(all(x.document_id == self.rec.external_id for x in items))
         self.assertTrue(all("Project: Sample" in x.text for x in items))
+
+    def test_invalid_fault_boundaries_fail_before_database_access(self):
+        for limit in (0, -1, 2, True):
+            with self.subTest(limit=limit), self.assertRaises(SourceError):
+                asyncio.run(
+                    ingest_fresh(
+                        snapshot=None,
+                        selected=("sample",),
+                        dataset="never_accessed",
+                        tag="test",
+                        test_only_fail_after_graph_records=limit,
+                    )
+                )
 
 
 if __name__ == "__main__":
