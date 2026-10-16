@@ -84,6 +84,18 @@ import or that process hard-kill, power loss, distributed readers and backend
 failure recovery are handled. Never interpret the presence of Data documents
 or a successful pipeline return as equivalent to independent graph admission.
 
+## B14: real OS process termination
+
+A separate local [B14 SIGKILL integration test](docs/validation-b14.md) sent an
+actual SIGKILL to its **own spawned child** after the first full native graph
+record was written. Independent audit rejected the incomplete store; an
+unmodified fresh-only guard refused rewriting it. A new empty dataset passed
+independent audit and was then selected, with an additional process reopening
+it successfully. An optional manual driver is under
+`tests/manual_sigkill_recovery.py`; it must run only against a dedicated
+**disposable** local store, never a shared Cognee runtime. This is not
+power-loss or arbitrary-backend crash recovery certification.
+
 ## Evidence and search boundaries
 
 - Exactly six literal function grades per **included** assessment are indexed. `?` is *unknown*, `—` means *not established*; neither is a substitute for `C`.
