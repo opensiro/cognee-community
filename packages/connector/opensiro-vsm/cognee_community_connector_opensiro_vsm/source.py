@@ -3,6 +3,7 @@
 Prototype research package. Strict fail-closed admission and literal VSM grades.
 Data obtained from a PINNED Git tree, not mutable checkout HEAD.
 """
+
 from __future__ import annotations
 
 import csv
@@ -118,7 +119,9 @@ def _explicit_primary_evidence(text: str) -> tuple[str, ...]:
     return tuple(x.strip() for x in BULLET.findall(body))
 
 
-def parse_assessment(path: str, content: bytes, commit: str, *, require_contract: bool = True) -> tuple[Record, bool]:
+def parse_assessment(
+    path: str, content: bytes, commit: str, *, require_contract: bool = True
+) -> tuple[Record, bool]:
     """Never infer function->evidence links; raw bytes are authoritative."""
     if not SHA40.fullmatch(commit):
         raise SourceError("commit must be exact 40-char SHA")
@@ -133,8 +136,9 @@ def parse_assessment(path: str, content: bytes, commit: str, *, require_contract
     compatible = QUESTION_SCALAR.sub(r'\1"?"', front)
     # YAML can parse an all-numeric 40-character Git SHA as a number,
     # dropping leading zeros. Preserve only this exact valid SHA scalar.
-    compatible = re.sub(r'^(review_ref:[ \t]*)([0-9a-f]{40})[ \t]*$',
-                        r'\1"\2"', compatible, flags=re.M)
+    compatible = re.sub(
+        r"^(review_ref:[ \t]*)([0-9a-f]{40})[ \t]*$", r'\1"\2"', compatible, flags=re.M
+    )
     try:
         meta = yaml.load(compatible, Loader=UniqueLoader)
     except (yaml.YAMLError, SourceError) as ex:
@@ -180,9 +184,7 @@ def parse_assessment(path: str, content: bytes, commit: str, *, require_contract
 def _git(repo: Path, *args: str) -> bytes:
     try:
         result = subprocess.run(
-            ["git", "-C", str(repo), *args],
-            check=True, capture_output=True,
-            timeout=90
+            ["git", "-C", str(repo), *args], check=True, capture_output=True, timeout=90
         )
         return result.stdout
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as ex:
@@ -199,7 +201,8 @@ def read_snapshot(repo: Path | str, commit: str) -> Snapshot:
         raise SourceError("Pinned commit resolves to a different revision")
     rawpaths = _git(repo, "ls-tree", "-r", "--name-only", commit, "assessments")
     paths = [
-        p for p in rawpaths.decode().splitlines()
+        p
+        for p in rawpaths.decode().splitlines()
         if p.startswith("assessments/") and p.endswith(".md")
     ]
     if not paths:
@@ -254,12 +257,16 @@ def diff_snapshots(old: Snapshot, new: Snapshot) -> dict:
     grades_changed = {
         x: {
             f: {"old": a[x].grades()[f], "new": b[x].grades()[f]}
-            for f in FUNCTIONS if a[x].grades()[f] != b[x].grades()[f]
-        } for x in changed
+            for f in FUNCTIONS
+            if a[x].grades()[f] != b[x].grades()[f]
+        }
+        for x in changed
     }
     return {
-        "old_commit": old.commit, "new_commit": new.commit,
-        "old_included": len(a), "new_included": len(b),
+        "old_commit": old.commit,
+        "new_commit": new.commit,
+        "old_included": len(a),
+        "new_included": len(b),
         "added": added,
         "retired": retired,
         "changed": changed,
@@ -285,6 +292,7 @@ def inspect_one_historical_record(repo: Path | str, commit: str, harness_id: str
     if resolved != commit:
         raise SourceError("historical ref does not resolve exactly")
     path = "assessments/" + harness_id + ".md"
-    record, _ = parse_assessment(path, _git(repo, "show", commit + ":" + path),
-                                 commit, require_contract=False)
+    record, _ = parse_assessment(
+        path, _git(repo, "show", commit + ":" + path), commit, require_contract=False
+    )
     return record

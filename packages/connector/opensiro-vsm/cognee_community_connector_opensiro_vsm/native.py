@@ -3,6 +3,7 @@
 Research adapter: graph_only=True; no LLM, embeddings or production refresh.
 The source_snapshot is validated fully BEFORE Cognee is imported or written.
 """
+
 from __future__ import annotations
 
 import json
@@ -12,7 +13,6 @@ from uuid import uuid4
 
 import cognee
 import dlt
-from sqlalchemy import select
 from cognee.context_global_variables import set_database_global_context_variables
 from cognee.infrastructure.databases.graph import get_graph_engine
 from cognee.infrastructure.databases.relational import get_async_session
@@ -20,11 +20,15 @@ from cognee.infrastructure.engine import DataPoint
 from cognee.modules.chunking.models import DocumentChunk
 from cognee.modules.data.models import Data
 from cognee.modules.data.processing.document_types import TextDocument
-from cognee.modules.pipelines.layers.resolve_authorized_user_dataset import resolve_authorized_user_dataset
+from cognee.modules.pipelines.layers.resolve_authorized_user_dataset import (
+    resolve_authorized_user_dataset,
+)
 from cognee.modules.pipelines.models.PipelineContext import PipelineContext
 from cognee.modules.search.types import SearchType
 from cognee.tasks.ingestion.dlt_utils import DOCUMENT_SOURCE_ATTR
 from cognee.tasks.storage import add_data_points
+from sqlalchemy import select
+
 from .source import Record, Snapshot, SourceError
 
 SECTION = re.compile(r"(?m)^## (S[1-5]\*?) [—-][^\n]*$")
@@ -71,8 +75,13 @@ def dlt_source(records: list[Record], tag: str):
     @dlt.resource(name="assessments", primary_key="id", write_disposition="replace")
     def resources():
         for r in records:
-            yield {"id": r.external_id, "title": r.project_name + " VSM assessment",
-                   "url": r.assessment_url, "content": r.raw_bytes.decode("utf-8")}
+            yield {
+                "id": r.external_id,
+                "title": r.project_name + " VSM assessment",
+                "url": r.assessment_url,
+                "content": r.raw_bytes.decode("utf-8"),
+            }
+
     item = resources()
     setattr(item, DOCUMENT_SOURCE_ATTR, tag)
     return item
@@ -80,19 +89,30 @@ def dlt_source(records: list[Record], tag: str):
 
 def typed_model(r: Record, pinned_commit: str):
     a = VSMAssessment(
-        key=r.version_id, harness_id=r.harness_id, index_commit=pinned_commit,
-        reviewed_upstream_ref=r.review_ref, content_sha256=r.sha256,
+        key=r.version_id,
+        harness_id=r.harness_id,
+        index_commit=pinned_commit,
+        reviewed_upstream_ref=r.review_ref,
+        content_sha256=r.sha256,
         profile_version=r.profile_version,
         procedure_version=r.assessment_procedure_version,
         source_url=r.assessment_url,
-        function_states=[VSMFunction(key=r.version_id + ":" + fn, function=fn, autonomy=grade)
-                         for fn, grade in r.states],
-        primary_evidence=[VSMEvidence(key=r.version_id + ":primary:" + str(i),
-                         text=text, source_level="assessment_primary_evidence_only")
-                         for i, text in enumerate(r.primary_evidence)]
+        function_states=[
+            VSMFunction(key=r.version_id + ":" + fn, function=fn, autonomy=grade)
+            for fn, grade in r.states
+        ],
+        primary_evidence=[
+            VSMEvidence(
+                key=r.version_id + ":primary:" + str(i),
+                text=text,
+                source_level="assessment_primary_evidence_only",
+            )
+            for i, text in enumerate(r.primary_evidence)
+        ],
     )
-    return VSMHarness(key=r.external_id, project_name=r.project_name,
-                      repository=r.repository, assessments=[a])
+    return VSMHarness(
+        key=r.external_id, project_name=r.project_name, repository=r.repository, assessments=[a]
+    )
 
 
 def chunks(r: Record):
@@ -104,16 +124,26 @@ def chunks(r: Record):
     for i, h in enumerate(heads):
         following = NEXT.search(raw, h.end())
         end = following.start() if following else len(raw)
-        section = raw[h.start():end].strip()
+        section = raw[h.start() : end].strip()
         text = f"Project: {r.project_name}\nRepository: {r.repository}\n{section}"
-        doc = TextDocument(name=r.harness_id + ".md",
-                           raw_data_location=r.assessment_url,
-                           external_metadata="", mime_type="text/plain")
-        result.append(DocumentChunk(
-            text=text, chunk_size=len(text.split()), chunk_index=i,
-            cut_type="markdown_section", is_part_of=doc, contains=[],
-            document_id=r.external_id, document_name=r.harness_id + ".md"
-        ))
+        doc = TextDocument(
+            name=r.harness_id + ".md",
+            raw_data_location=r.assessment_url,
+            external_metadata="",
+            mime_type="text/plain",
+        )
+        result.append(
+            DocumentChunk(
+                text=text,
+                chunk_size=len(text.split()),
+                chunk_index=i,
+                cut_type="markdown_section",
+                is_part_of=doc,
+                contains=[],
+                document_id=r.external_id,
+                document_name=r.harness_id + ".md",
+            )
+        )
     return result
 
 
@@ -133,8 +163,9 @@ async def source_data(dataset: str, tag: str):
     return user, ds, rows, docs
 
 
-async def ingest_fresh(snapshot: Snapshot, selected: tuple[str, ...], dataset: str,
-                       tag: str, lexical: bool = False):
+async def ingest_fresh(
+    snapshot: Snapshot, selected: tuple[str, ...], dataset: str, tag: str, lexical: bool = False
+):
     """Fresh-only smoke. No replacement, interrupted rollback, or hosted runtime."""
     if not selected or len(selected) != len(set(selected)):
         raise SourceError("selected set empty or duplicated")
@@ -147,14 +178,18 @@ async def ingest_fresh(snapshot: Snapshot, selected: tuple[str, ...], dataset: s
     # it explicitly before querying for existing Data; Cognee.add normally
     # does this internally, but our fresh-only guard runs earlier.
     from cognee.low_level import setup
+
     await setup()
     user, ds, old_rows, _ = await source_data(dataset, tag)
     if old_rows:
         raise SourceError("Refusing nonempty Cognee dataset; fresh-only experimental adapter")
     t0 = time.monotonic()
     run = await cognee.add(
-        dlt_source(records, tag), dataset_name=dataset,
-        primary_key="id", write_disposition="replace", max_rows_per_table=0,
+        dlt_source(records, tag),
+        dataset_name=dataset,
+        primary_key="id",
+        write_disposition="replace",
+        max_rows_per_table=0,
         skip_connection_test=True,
     )
     user, ds, all_rows, docs = await source_data(dataset, tag)
@@ -163,8 +198,11 @@ async def ingest_fresh(snapshot: Snapshot, selected: tuple[str, ...], dataset: s
     async with set_database_global_context_variables(ds.id, user.id, permission_type="write"):
         for r in records:
             ctx = PipelineContext(
-                user=user, dataset=ds, data_item=docs[r.external_id],
-                pipeline_run_id=uuid4(), pipeline_name="opensiro_source_prototype"
+                user=user,
+                dataset=ds,
+                data_item=docs[r.external_id],
+                pipeline_run_id=uuid4(),
+                pipeline_name="opensiro_source_prototype",
             )
             await add_data_points([typed_model(r, snapshot.commit)], graph_only=True, ctx=ctx)
             if lexical:
@@ -178,32 +216,38 @@ async def ingest_fresh(snapshot: Snapshot, selected: tuple[str, ...], dataset: s
         name = props.get("type", "")
         counts[name] = counts.get(name, 0) + 1
     for kind, n in (
-        ("VSMHarness",len(records)),("VSMAssessment",len(records)),
-        ("VSMFunction",len(records)*6),
-        ("VSMEvidence",sum(len(r.primary_evidence) for r in records))
+        ("VSMHarness", len(records)),
+        ("VSMAssessment", len(records)),
+        ("VSMFunction", len(records) * 6),
+        ("VSMEvidence", sum(len(r.primary_evidence) for r in records)),
     ):
         if counts.get(kind, 0) != n:
             raise SourceError(f"graph audit failed for {kind}: {counts.get(kind)} vs {n}")
-    if lexical and counts.get("DocumentChunk") != len(records)*6:
+    if lexical and counts.get("DocumentChunk") != len(records) * 6:
         raise SourceError("DocumentChunk projection count mismatch")
     if len(refs) != len(nodes):
         raise SourceError("native source provenance incomplete")
     query = "MATCH (n:Node) WHERE n.type = 'VSMFunction' RETURN n.properties AS props"
-    result = await cognee.search(query_text=query, query_type=SearchType.CYPHER,
-                                 datasets=[dataset])
+    result = await cognee.search(query_text=query, query_type=SearchType.CYPHER, datasets=[dataset])
     found = [json.loads(row[0]) for row in result[0]["search_result"]]
-    expected = {r.version_id + ":" + f: (f, val)
-                for r in records for f, val in r.states}
-    got = {r["key"]: (r["function"],r["autonomy"]) for r in found}
+    expected = {r.version_id + ":" + f: (f, val) for r in records for f, val in r.states}
+    got = {r["key"]: (r["function"], r["autonomy"]) for r in found}
     if len(found) != len(expected) or got != expected:
         raise SourceError("native Cypher grading differs from pinned index")
     return {
-        "status":"PASS_FRESH_LOCAL_COGNEE_IMPORT",
-        "dataset":dataset,"index_commit":snapshot.commit,
-        "documents":len(docs),"graph_nodes":len(nodes),"graph_edges":len(edges),
-        "source_scoped_nodes":len(refs),"node_type_counts":counts,
-        "graded_facts":len(found),"all_states_exact":True,
-        "sdk_result":type(run).__name__,
-        "elapsed_s":round(time.monotonic()-t0,3),
-        "limitations":"Fresh-only graph_only smoke. No updates, interrupted rollback, embeddings or GPU."
+        "status": "PASS_FRESH_LOCAL_COGNEE_IMPORT",
+        "dataset": dataset,
+        "index_commit": snapshot.commit,
+        "documents": len(docs),
+        "graph_nodes": len(nodes),
+        "graph_edges": len(edges),
+        "source_scoped_nodes": len(refs),
+        "node_type_counts": counts,
+        "graded_facts": len(found),
+        "all_states_exact": True,
+        "sdk_result": type(run).__name__,
+        "elapsed_s": round(time.monotonic() - t0, 3),
+        "limitations": (
+            "Fresh-only graph_only smoke. No updates, interrupted rollback, embeddings or GPU."
+        ),
     }

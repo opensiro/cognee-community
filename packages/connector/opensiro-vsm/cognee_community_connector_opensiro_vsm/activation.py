@@ -6,6 +6,7 @@ into a fresh dataset and independently audited before publication.
 Single-host filesystem contract: same-filesystem os.replace, fcntl advisory lock,
 fsync file/parent. Not a distributed consensus or cross-host deployment protocol.
 """
+
 from __future__ import annotations
 
 import fcntl
@@ -15,7 +16,6 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from .source import SHA40, SourceError
 
@@ -24,8 +24,9 @@ AUDIT_SCHEMA = "opensiro-vsm-independent-audit/v1"
 
 
 def stable_bytes(payload: dict) -> bytes:
-    return (json.dumps(payload, sort_keys=True, ensure_ascii=False,
-                       separators=(",", ":")) + "\n").encode("utf8")
+    return (
+        json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n"
+    ).encode("utf8")
 
 
 def json_object(path: Path) -> dict:
@@ -92,8 +93,10 @@ class Candidate:
             raise SourceError("Receipt source commit differs")
         if report.get("dataset") != self.dataset or report.get("source_tag") != self.tag:
             raise SourceError("Receipt dataset or source tag differs")
-        if report.get("documents") != self.expected_count or \
-           report.get("accepted_harnesses") != self.expected_count:
+        if (
+            report.get("documents") != self.expected_count
+            or report.get("accepted_harnesses") != self.expected_count
+        ):
             raise SourceError("Receipt source admission cardinality differs")
         if report.get("exact_grades") != self.expected_count * 6:
             raise SourceError("Receipt has incomplete literal function facts")
@@ -101,8 +104,13 @@ class Candidate:
             raise SourceError("Receipt did not prove exact grades + provenance")
 
 
-def publish(root: Path, candidate: Candidate, expected_selection_id: str | None,
-            *, inject_failure: str | None = None) -> dict:
+def publish(
+    root: Path,
+    candidate: Candidate,
+    expected_selection_id: str | None,
+    *,
+    inject_failure: str | None = None,
+) -> dict:
     """CAS publish, never deleting data or auto-advancing the active generation.
 
     Caller must independently verify receipt first. Use expected_selection_id to
@@ -120,7 +128,9 @@ def publish(root: Path, candidate: Candidate, expected_selection_id: str | None,
             raise SourceError("Stale generation publish: compare-and-swap mismatch")
         if current and current["commit"] == candidate.commit:
             if current["dataset"] != candidate.dataset:
-                raise SourceError("Same source commit published under a different generation dataset")
+                raise SourceError(
+                    "Same source commit published under a different generation dataset"
+                )
             if current["audit_sha256"] != audit_digest(candidate.audit):
                 raise SourceError("Same generation has different independent audit")
             return current  # exact idempotent republish
@@ -129,22 +139,28 @@ def publish(root: Path, candidate: Candidate, expected_selection_id: str | None,
         seq = (current["sequence"] if current else 0) + 1
         receipt_sha = audit_digest(candidate.audit)
         selection_id = hashlib.sha256(
-            stable_bytes({
-                "sequence": seq, "commit": candidate.commit,
-                "dataset": candidate.dataset, "tag": candidate.tag,
-                "receipt_sha": receipt_sha
-            })
+            stable_bytes(
+                {
+                    "sequence": seq,
+                    "commit": candidate.commit,
+                    "dataset": candidate.dataset,
+                    "tag": candidate.tag,
+                    "receipt_sha": receipt_sha,
+                }
+            )
         ).hexdigest()
         pointer = {
-            "schema": POINTER_SCHEMA, "sequence": seq,
+            "schema": POINTER_SCHEMA,
+            "sequence": seq,
             "selection_id": selection_id,
-            "commit": candidate.commit, "dataset": candidate.dataset,
-            "tag": candidate.tag, "audit_sha256": receipt_sha,
-            "admitted": candidate.expected_count
+            "commit": candidate.commit,
+            "dataset": candidate.dataset,
+            "tag": candidate.tag,
+            "audit_sha256": receipt_sha,
+            "admitted": candidate.expected_count,
         }
         target = root / "active.json"
-        descriptor, tempname = tempfile.mkstemp(prefix=".staged-pointer-",
-                                               suffix=".json", dir=root)
+        descriptor, tempname = tempfile.mkstemp(prefix=".staged-pointer-", suffix=".json", dir=root)
         try:
             with os.fdopen(descriptor, "wb") as stream:
                 stream.write(stable_bytes(pointer))

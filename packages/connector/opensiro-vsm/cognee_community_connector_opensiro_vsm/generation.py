@@ -4,6 +4,7 @@ Assumptions: snapshot already validated from Git tree and all selected records
 belong to snapshot.accepted. Supports v1 document source refs and v2 chunk refs.
 No writes to target Cognee dataset.
 """
+
 from __future__ import annotations
 
 import json
@@ -43,8 +44,12 @@ def source_key(node_id: str, fields: dict):
 
 
 async def audit_dataset(
-    snapshot: Snapshot, selected: tuple[str, ...], dataset: str, tag: str,
-    *, lexical: bool,
+    snapshot: Snapshot,
+    selected: tuple[str, ...],
+    dataset: str,
+    tag: str,
+    *,
+    lexical: bool,
 ):
     chosen = [snapshot.accepted[x] for x in selected]
     if len(chosen) != len(set(x.harness_id for x in chosen)):
@@ -62,19 +67,22 @@ async def audit_dataset(
 
     count = Counter(props.get("type") for _, props in nodes)
     expected = {
-        "VSMHarness":len(chosen),"VSMAssessment":len(chosen),
-        "VSMFunction":len(chosen)*6,
-        "VSMEvidence":sum(len(x.primary_evidence) for x in chosen),
+        "VSMHarness": len(chosen),
+        "VSMAssessment": len(chosen),
+        "VSMFunction": len(chosen) * 6,
+        "VSMEvidence": sum(len(x.primary_evidence) for x in chosen),
     }
     if lexical:
         expected["DocumentChunk"] = len(chosen) * 6
         expected["TextDocument"] = len(chosen) * 6
     if dict(count) != expected:
-        raise SourceError(f"Unexpected typed graph counts: observed={dict(count)}, expected={expected}")
+        raise SourceError(
+            f"Unexpected typed graph counts: observed={dict(count)}, expected={expected}"
+        )
     node_map = {str(node_id): p for node_id, p in nodes}
     if len(node_refs) != len(nodes) or len(edge_refs) != len(edges):
         raise SourceError("Missing native source refs")
-    ref_for_node={}
+    ref_for_node = {}
     for nid, properties in node_map.items():
         external = source_key(nid, properties)
         data = docs.get(external)
@@ -82,17 +90,21 @@ async def audit_dataset(
             raise SourceError(f"Graph source absent from dataset: {external}")
         # Cohesive v2 subref points at the exact owning Data and native chunk id.
         kind = properties.get("type")
-        expected_ref = (f"source_ref:v2:{ds.id}:{data.id}:{nid}"
-                        if kind == "DocumentChunk"
-                        else make_source_ref_key(ds.id,data.id))
+        expected_ref = (
+            f"source_ref:v2:{ds.id}:{data.id}:{nid}"
+            if kind == "DocumentChunk"
+            else make_source_ref_key(ds.id, data.id)
+        )
         if node_refs.get(nid) != [expected_ref]:
             raise SourceError(f"Node reference inconsistent with source {external}")
         ref_for_node[nid] = expected_ref
         if kind == "VSMAssessment":
             record = snapshot.accepted[properties["harness_id"]]
-            if (properties["content_sha256"] != record.sha256 or
-                properties["reviewed_upstream_ref"] != record.review_ref or
-                properties["index_commit"] != snapshot.commit):
+            if (
+                properties["content_sha256"] != record.sha256
+                or properties["reviewed_upstream_ref"] != record.review_ref
+                or properties["index_commit"] != snapshot.commit
+            ):
                 raise SourceError(f"Staged assessment provenance mismatch: {record.harness_id}")
     for edge, refs in edge_refs.items():
         if str(edge.source_id) not in ref_for_node:
@@ -101,24 +113,30 @@ async def audit_dataset(
             raise SourceError("Edge native ownership differs from source node")
 
     qry = "MATCH (n:Node) WHERE n.type = 'VSMFunction' RETURN n.properties AS props"
-    response = await cognee.search(query_text=qry,query_type=SearchType.CYPHER,datasets=[dataset])
+    response = await cognee.search(query_text=qry, query_type=SearchType.CYPHER, datasets=[dataset])
     rows = [json.loads(r[0]) for r in response[0]["search_result"]]
-    expected_grades = {r.version_id+":"+fn:(fn,value)
-                       for r in chosen for fn,value in r.states}
-    seen = {r["key"]:(r["function"],r["autonomy"]) for r in rows}
+    expected_grades = {
+        r.version_id + ":" + fn: (fn, value) for r in chosen for fn, value in r.states
+    }
+    seen = {r["key"]: (r["function"], r["autonomy"]) for r in rows}
     if len(rows) != len(expected_grades) or seen != expected_grades:
         raise SourceError("Function state mismatch from actual Cognee public search")
     return {
         "schema": AUDIT_SCHEMA,
-        "status": "PASS", "index_commit":snapshot.commit,
-        "dataset":dataset, "source_tag":tag,
-        "documents":len(docs),"accepted_harnesses":len(chosen),
-        "exact_grades":len(rows),"states_exact":True,
-        "source_refs_exact":True,
-        "graph_nodes":len(nodes),"graph_edges":len(edges),
-        "node_types":dict(count),
-        "all_validated_sources":sorted(r.harness_id for r in chosen),
-        "provenance_document_v1":sum(p.get("type")!="DocumentChunk" for _,p in nodes),
-        "provenance_chunk_v2":sum(p.get("type")=="DocumentChunk" for _,p in nodes),
-        "note":"One immutable local staged generation; no mutations performed during audit.",
+        "status": "PASS",
+        "index_commit": snapshot.commit,
+        "dataset": dataset,
+        "source_tag": tag,
+        "documents": len(docs),
+        "accepted_harnesses": len(chosen),
+        "exact_grades": len(rows),
+        "states_exact": True,
+        "source_refs_exact": True,
+        "graph_nodes": len(nodes),
+        "graph_edges": len(edges),
+        "node_types": dict(count),
+        "all_validated_sources": sorted(r.harness_id for r in chosen),
+        "provenance_document_v1": sum(p.get("type") != "DocumentChunk" for _, p in nodes),
+        "provenance_chunk_v2": sum(p.get("type") == "DocumentChunk" for _, p in nodes),
+        "note": "One immutable local staged generation; no mutations performed during audit.",
     }

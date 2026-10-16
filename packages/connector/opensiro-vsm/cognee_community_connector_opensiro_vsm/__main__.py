@@ -1,15 +1,16 @@
-"""Local source-first CLI; no Cognee or GitHub modifications.
+"""Read-only OpenSiro source CLI, with no Cognee writes.
 
-Usage (from parent workspace):
-  .venv/bin/python -m opensiro_source_prototype validate --repo source-index --commit <SHA40>
-  .venv/bin/python -m opensiro_source_prototype diff --repo source-index --old <SHA40> --new <SHA40>
-  .venv/bin/python -m opensiro_source_prototype manifest --repo source-index --commit <SHA40> --output results/b10_manifest.json
+Examples:
+    python -m cognee_community_connector_opensiro_vsm validate --repo ./index --commit SHA40
+    python -m cognee_community_connector_opensiro_vsm diff --repo ./index \
+        --old OLD_SHA40 --new NEW_SHA40
 """
+
 import argparse
 import json
 from pathlib import Path
 
-from .source import SourceError, diff_snapshots, read_snapshot, inspect_one_historical_record
+from .source import SourceError, diff_snapshots, inspect_one_historical_record, read_snapshot
 
 
 def _records_manifest(snapshot):
@@ -35,7 +36,8 @@ def _records_manifest(snapshot):
                 "primary_evidence": list(rec.primary_evidence),
                 # Full source markdown is referenced and may be read from pinned Git.
                 # The manifest does not rewrite/normalize the authoritative bytes.
-            } for rec in recs
+            }
+            for rec in recs
         ],
     }
 
@@ -50,12 +52,17 @@ def main(argv=None):
     d.add_argument("--repo", required=True)
     d.add_argument("--old", required=True)
     d.add_argument("--new", required=True)
-    h = commands.add_parser("diff-one", help="Historical single-record inspection only, NOT full snapshot admission validation")
+    h = commands.add_parser(
+        "diff-one",
+        help="Historical single-record inspection only, NOT full snapshot admission validation",
+    )
     h.add_argument("--repo", required=True)
     h.add_argument("--old", required=True)
     h.add_argument("--new", required=True)
     h.add_argument("--harness", required=True)
-    m = commands.add_parser("manifest", help="Emit pinned admitted source manifest, not Cognee data.")
+    m = commands.add_parser(
+        "manifest", help="Emit pinned admitted source manifest, not Cognee data."
+    )
     m.add_argument("--repo", required=True)
     m.add_argument("--commit", required=True)
     m.add_argument("--output", required=True)
@@ -71,11 +78,16 @@ def main(argv=None):
             result = {
                 "status": "PASS_SCOPED_HISTORY_ONLY",
                 "note": "No full snapshot canonical admission claim",
-                "harness": args.harness, "old_status": old.status, "new_status": new.status,
+                "harness": args.harness,
+                "old_status": old.status,
+                "new_status": new.status,
                 "same_review_ref": old.review_ref == new.review_ref,
                 "same_content_sha256": old.sha256 == new.sha256,
-                "changed_grades": {f: {"old": old.grades()[f], "new": new.grades()[f]}
-                                   for f in old.grades() if old.grades()[f] != new.grades()[f]},
+                "changed_grades": {
+                    f: {"old": old.grades()[f], "new": new.grades()[f]}
+                    for f in old.grades()
+                    if old.grades()[f] != new.grades()[f]
+                },
             }
         else:
             src = read_snapshot(args.repo, args.commit)

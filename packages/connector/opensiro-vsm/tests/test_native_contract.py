@@ -1,4 +1,5 @@
 """CPU-only sanity tests for typed source and lexical section projection."""
+
 import unittest
 
 from cognee_community_connector_opensiro_vsm.native import chunks, typed_model
@@ -45,16 +46,18 @@ class NativeContracts(unittest.TestCase):
         entity = typed_model(self.rec, SHA)
         assessments = entity.assessments
         self.assertEqual(len(assessments), 1)
-        self.assertEqual([(r.function, r.autonomy) for r in assessments[0].function_states],
-                         list(self.rec.states))
+        self.assertEqual(
+            [(r.function, r.autonomy) for r in assessments[0].function_states],
+            list(self.rec.states),
+        )
         self.assertEqual(assessments[0].reviewed_upstream_ref, self.rec.review_ref)
         self.assertEqual(assessments[0].content_sha256, self.rec.sha256)
 
     def test_section_chunks_exact(self):
-        items=chunks(self.rec)
-        self.assertEqual(len(items),6)
-        self.assertEqual({x.document_name for x in items},{"sample.md"})
-        self.assertTrue(all(x.document_id==self.rec.external_id for x in items))
+        items = chunks(self.rec)
+        self.assertEqual(len(items), 6)
+        self.assertEqual({x.document_name for x in items}, {"sample.md"})
+        self.assertTrue(all(x.document_id == self.rec.external_id for x in items))
         self.assertTrue(all("Project: Sample" in x.text for x in items))
 
 
