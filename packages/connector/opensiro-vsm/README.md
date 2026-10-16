@@ -112,6 +112,20 @@ This does not make Cognee's native DLT transaction atomic and is **not** a
 cross-host fencing lease, a production cleanup guarantee, or proof that the
 filesystem survives host power loss.
 
+## B16: partial committed DLT load-job SIGKILL
+
+The [B16 report](docs/validation-b16.md) adds another real SIGKILL case: a
+**three-job** DLT load package in a disposable SQLite store was stopped after
+one native SQL job had **committed**, proven by an independent read-only SQLite
+connection. **1/3 DLT rows survived** the kill, but Cognee still contained
+**0 Data rows**. The B15 durable single-host attempt marker rejected reuse of
+that dataset before any new write. Recovery is a **different empty dataset →
+independent audit → CAS selection → new-process read-back**.
+
+This is a test-specific multi-resource DLT package, **not** a partial
+transaction within the connector's normal single resource/table, or evidence
+of general native DLT resumability / distributed crash safety.
+
 ## Evidence and search boundaries
 
 - Exactly six literal function grades per **included** assessment are indexed. `?` is *unknown*, `—` means *not established*; neither is a substitute for `C`.
