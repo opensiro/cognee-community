@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from pathlib import Path
 from uuid import uuid4
 
 import cognee
@@ -171,6 +172,7 @@ async def ingest_fresh(
     lexical: bool = False,
     *,
     test_only_fail_after_graph_records: int | None = None,
+    attempt_root: Path | None = None,
 ):
     """Fresh-only smoke. No replacement, interrupted rollback, or hosted runtime.
 
@@ -190,6 +192,12 @@ async def ingest_fresh(
         # Preflight all section layouts before the first SDK write.
         for record in records:
             chunks(record)
+    if attempt_root is not None:
+        # Claim before any Cognee write. Deliberately never delete this marker,
+        # including after a successful run. A retry needs a DIFFERENT dataset.
+        from .attempt import claim_attempt
+
+        claim_attempt(attempt_root, dataset, tag, snapshot.commit, selected)
     # A genuinely empty local store has no relational schema yet. Initialize
     # it explicitly before querying for existing Data; Cognee.add normally
     # does this internally, but our fresh-only guard runs earlier.

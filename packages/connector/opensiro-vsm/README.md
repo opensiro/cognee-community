@@ -96,6 +96,22 @@ it successfully. An optional manual driver is under
 **disposable** local store, never a shared Cognee runtime. This is not
 power-loss or arbitrary-backend crash recovery certification.
 
+## B15: early DLT failure and durable attempt marker
+
+The [B15 validation report](docs/validation-b15.md) covers a **real SIGKILL
+while Cognee's DLT iterator is processing source records, before any Data rows
+are committed**. In this state the older nonempty-Data guard alone would be
+insufficient. The opt-in **single-host** `attempt_root` parameter now writes an
+exclusive, durable `CLAIMED_NEVER_REUSABLE` marker **before** any Cognee write.
+The normal `examples/example.py` supplies this guard automatically under the
+requested local store root. An interrupted/failed generation must be replaced
+by a **different** dataset name; its attempt marker is not automatically
+removed. Operators must preserve attempt markers alongside dataset state.
+
+This does not make Cognee's native DLT transaction atomic and is **not** a
+cross-host fencing lease, a production cleanup guarantee, or proof that the
+filesystem survives host power loss.
+
 ## Evidence and search boundaries
 
 - Exactly six literal function grades per **included** assessment are indexed. `?` is *unknown*, `—` means *not established*; neither is a substitute for `C`.

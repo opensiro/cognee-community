@@ -52,6 +52,7 @@ def main():
             dataset=args.dataset,
             tag="opensiro_vsm_canonical_example",
             lexical=args.lexical,
+            attempt_root=root / "stage-attempts",
         )
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
