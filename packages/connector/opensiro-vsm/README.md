@@ -59,6 +59,13 @@ Optional `activation.py` and `generation.py` provide **single-host research prim
 
 Do not directly run these against a shared/production instance: no distributed locking, automatic recovery of interrupted Cognee imports, dataset garbage collection, credential isolation, reader migration, or proof of power-loss resilience is provided. See the [OpenSiro B11 bounded result](https://github.com/opensiro/vsm-harness-index/issues/1598). B11 tested two and then three real historical records, **not** two full Index generations.
 
+### Full packaged-corpus acceptance
+
+A separately validated **533/533 accepted** local full run and the bounded
+fault/recovery tests are documented in [B13 validation](docs/validation-b13.md).
+The native read-back included all 3,198 literal VSM grades and all 11,201
+source-owned graph nodes. This is not a production reliability guarantee.
+
 ## B13: bounded incomplete-stage recovery evidence
 
 A **controlled Python exception** after the first complete graph record (test-only
