@@ -1,0 +1,157 @@
+name: OpenSiro VSM Connector — PR1 Sharded Index Python 3.11
+
+on:
+  push:
+    branches:
+      - fix/opensiro-vsm-shards-dev-flow-20261019
+    paths:
+      - packages/connector/opensiro-vsm/**
+      - .github/workflows/opensiro-vsm-pr1-py311.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clean-wheel-sharded-source:
+    if: github.repository == 'opensiro/cognee-community'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    env:
+      PKG: packages/connector/opensiro-vsm
+      PIN: 5cbb1035538b8f80fa3362f1c99652f4fd7c55e8
+      COGNEE_SKIP_CONNECTION_TEST: "true"
+      TELEMETRY_DISABLED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - name: Checkout OpenSiro review branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Provision Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheel and resolve dependencies cleanly
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip wheel --no-deps --wheel-dir "$RUNNER_TEMP/wheels" "./$PKG"
+          python -m venv "$RUNNER_TEMP/py311"
+          "$RUNNER_TEMP/py311/bin/python" -m pip install --no-cache-dir "$RUNNER_TEMP/wheels"/cognee_community_connector_opensiro_vsm-*.whl
+          "$RUNNER_TEMP/py311/bin/python" -m pip check
+          "$RUNNER_TEMP/py311/bin/python" - <<'PY'
+          import sys
+          from importlib.metadata import version
+          assert sys.version_info[:2] == (3, 11)
+          assert version("cognee") == "1.6.4"
+          assert version("cognee-community-connector-opensiro-vsm") == "0.1.0"
+          print("PR1_PY311_CLEAN_WHEEL_PASS")
+          PY
+
+      - name: All connector unit and SDK-contract tests from installed wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/py311/bin/python" -m unittest discover -s "$PKG/tests" -v
+
+      - name: Checkout exact sharded Index snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q "$RUNNER_TEMP/index"
+          git -C "$RUNNER_TEMP/index" remote add origin https://github.com/opensiro/vsm-harness-index.git
+          git -C "$RUNNER_TEMP/index" fetch -q --depth=1 origin "$PIN"
+          git -C "$RUNNER_TEMP/index" checkout -q --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/index" rev-parse HEAD)" = "$PIN"
+
+      - name: Installed-wheel canonical source validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/py311/bin/python" -m cognee_community_connector_opensiro_vsm validate \
+            --repo "$RUNNER_TEMP/index" --commit "$PIN" > "$RUNNER_TEMP/source-validation.json"
+          "$RUNNER_TEMP/py311/bin/python" - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          doc = json.loads((Path(os.environ["RUNNER_TEMP"]) / "source-validation.json").read_text())
+          assert doc["status"] == "PASS_SOURCE_VALIDATION", doc
+          assert doc["accepted"] == 583 and doc["excluded"] == 48 and doc["proposed"] == 12, doc
+          print("PR1_SHARDED_SOURCE_VALIDATION_PASS")
+          PY
+
+      - name: Fresh Cognee-native graph import using the installed wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/py311/bin/python" "$PKG/examples/example.py" \
+            --repo "$RUNNER_TEMP/index" --commit "$PIN" \
+            --store-root "$RUNNER_TEMP/fresh-store" \
+            --dataset opensiro-pr1-py311-shards \
+            --ids ascension,balrog,dexto --lexical > "$RUNNER_TEMP/import-result.json"
+          "$RUNNER_TEMP/py311/bin/python" - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          raw = (root / "import-result.json").read_text()
+          marker = '{\n  "status": "PASS_FRESH_LOCAL_COGNEE_IMPORT"'
+          start = raw.rfind(marker)
+          assert start >= 0, raw[-2000:]
+          doc, _ = json.JSONDecoder().raw_decode(raw[start:])
+          assert doc["status"] == "PASS_FRESH_LOCAL_COGNEE_IMPORT", doc
+          assert doc["documents"] == 3 and doc["graded_facts"] == 18, doc
+          assert doc["graph_nodes"] == 60 and doc["graph_edges"] == 39, doc
+          assert doc["all_states_exact"] is True, doc
+          assert len(list((root / "fresh-store" / "stage-attempts").glob("*.json"))) == 1
+          print("PR1_PY311_SHARDED_NATIVE_IMPORT_PASS", doc["graph_nodes"], doc["graph_edges"])
+          PY
+
+      - name: Fresh-process independent audit, native search, pinned source inspection
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/py311/bin/python" "$PKG/examples/search_and_inspect.py" \
+            --repo "$RUNNER_TEMP/index" --commit "$PIN" \
+            --store-root "$RUNNER_TEMP/fresh-store" \
+            --dataset opensiro-pr1-py311-shards \
+            --query "game environment observation action feedback" --top-k 10 \
+            --inspect ascension --show-markdown > "$RUNNER_TEMP/search-result.json"
+          "$RUNNER_TEMP/py311/bin/python" - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          raw_result = (Path(os.environ["RUNNER_TEMP"]) / "search-result.json").read_text()
+          marker = '{\n  "dataset": "opensiro-pr1-py311-shards"'
+          start = raw_result.rfind(marker)
+          assert start >= 0, raw_result[-2000:]
+          data, _ = json.JSONDecoder().raw_decode(raw_result[start:])
+          assert data["dataset"] == "opensiro-pr1-py311-shards"
+          assert len(data["all_native_hits_unfiltered"]) == 10
+          assert data["inspection"]["harness_id"] == "ascension"
+          raw = data["inspection"]["full_canonical_markdown"].encode()
+          assert hashlib.sha256(raw).hexdigest() == data["inspection"]["assessment_sha256"]
+          assert data["inspection"]["canonical_assessment"].endswith("/assessments/as/ascension.md")
+          assert "/tree/" in data["inspection"]["pinned_upstream_tree"]
+          print("PR1_PY311_NATIVE_SEARCH_SOURCE_AUDIT_PASS")
+          PY
+
+      - name: Missing dataset fails closed without implicit creation
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          "$RUNNER_TEMP/py311/bin/python" "$PKG/examples/search_and_inspect.py" \
+            --repo "$RUNNER_TEMP/index" --commit "$PIN" \
+            --store-root "$RUNNER_TEMP/fresh-store" \
+            --dataset opensiro-pr1-nonexistent \
+            --query "observation" > "$RUNNER_TEMP/missing.log" 2>&1
+          status=$?
+          set -e
+          test "$status" -eq 2
+          grep -F 'Audit requires exactly one existing locally owned dataset' "$RUNNER_TEMP/missing.log"
+          echo "PR1_PY311_MISSING_DATASET_FAIL_CLOSED_PASS"

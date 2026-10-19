@@ -22,6 +22,20 @@ from .source import Snapshot, SourceError
 AUDIT_SCHEMA = "opensiro-vsm-independent-audit/v1"
 
 
+def verify_node_type_counts(observed: Counter, expected: dict[str, int]) -> None:
+    """Compare graph types exactly, treating absent zero-count types as zero."""
+    unexpected = {kind: amount for kind, amount in observed.items() if kind not in expected}
+    mismatched = {
+        kind: {"actual": observed.get(kind, 0), "expected": amount}
+        for kind, amount in expected.items()
+        if observed.get(kind, 0) != amount
+    }
+    if unexpected or mismatched:
+        raise SourceError(
+            f"Unexpected typed graph counts: unexpected={unexpected}, mismatched={mismatched}"
+        )
+
+
 def source_key(node_id: str, fields: dict):
     kind = fields.get("type")
     if kind == "VSMAssessment":
@@ -78,10 +92,7 @@ async def audit_dataset(
     if lexical:
         expected["DocumentChunk"] = len(chosen) * 6
         expected["TextDocument"] = len(chosen) * 6
-    if dict(count) != expected:
-        raise SourceError(
-            f"Unexpected typed graph counts: observed={dict(count)}, expected={expected}"
-        )
+    verify_node_type_counts(count, expected)
     node_map = {str(node_id): p for node_id, p in nodes}
     if len(node_refs) != len(nodes) or len(edge_refs) != len(edges):
         raise SourceError("Missing native source refs")

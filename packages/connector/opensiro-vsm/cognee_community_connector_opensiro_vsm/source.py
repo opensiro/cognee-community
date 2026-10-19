@@ -11,14 +11,14 @@ import hashlib
 import io
 import re
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
 
 import yaml
 
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
-QUESTION_SCALAR = re.compile(r"^(autonomy_[a-z0-9_]+:[ \t]*)\?[ \t]*$", re.M)
+QUESTION_SCALAR = re.compile(r"^(autonomy_[a-z0-9_]+:[ \t]*)\?[ \t]*$", re.MULTILINE)
 FUNCTIONS = ("S1", "S2", "S3", "S3_STAR", "S4", "S5")
 FIELD = {f: "autonomy_" + f.lower() for f in FUNCTIONS}
 ALLOWED = frozenset(("A", "B", "C", "P", "A(P)", "B(P)", "C(P)", "—", "?"))
@@ -119,6 +119,16 @@ def _explicit_primary_evidence(text: str) -> tuple[str, ...]:
     return tuple(x.strip() for x in BULLET.findall(body))
 
 
+def assessment_paths(harness_id: str) -> tuple[str, str]:
+    """Both canonical historical layouts; reject every other path shape."""
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", harness_id):
+        raise SourceError("Invalid assessment harness_id")
+    return (
+        f"assessments/{harness_id}.md",
+        f"assessments/{harness_id[:2]}/{harness_id}.md",
+    )
+
+
 def parse_assessment(
     path: str, content: bytes, commit: str, *, require_contract: bool = True
 ) -> tuple[Record, bool]:
@@ -137,7 +147,7 @@ def parse_assessment(
     # YAML can parse an all-numeric 40-character Git SHA as a number,
     # dropping leading zeros. Preserve only this exact valid SHA scalar.
     compatible = re.sub(
-        r"^(review_ref:[ \t]*)([0-9a-f]{40})[ \t]*$", r'\1"\2"', compatible, flags=re.M
+        r"^(review_ref:[ \t]*)([0-9a-f]{40})[ \t]*$", r'\1"\2"', compatible, flags=re.MULTILINE
     )
     try:
         meta = yaml.load(compatible, Loader=UniqueLoader)
@@ -146,7 +156,7 @@ def parse_assessment(
     if not isinstance(meta, dict):
         raise SourceError(f"{path}: frontmatter must be a map")
     hid = _require_str(meta, "harness_id", path)
-    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", hid) or path != f"assessments/{hid}.md":
+    if path not in assessment_paths(hid):
         raise SourceError(f"{path}: invalid/mismatched harness_id: {hid!r}")
     status = _require_str(meta, "status", path)
     if status not in STATUSES:
@@ -291,7 +301,13 @@ def inspect_one_historical_record(repo: Path | str, commit: str, harness_id: str
     resolved = _git(repo, "rev-parse", "--verify", commit + "^{commit}").decode().strip()
     if resolved != commit:
         raise SourceError("historical ref does not resolve exactly")
-    path = "assessments/" + harness_id + ".md"
+    present = set(
+        _git(repo, "ls-tree", "-r", "--name-only", commit, "assessments").decode().splitlines()
+    )
+    matches = [path for path in assessment_paths(harness_id) if path in present]
+    if len(matches) != 1:
+        raise SourceError("Historical assessment must have exactly one canonical path")
+    path = matches[0]
     record, _ = parse_assessment(
         path, _git(repo, "show", commit + ":" + path), commit, require_contract=False
     )
