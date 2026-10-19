@@ -16,6 +16,7 @@ from cognee_community_connector_opensiro_vsm.source import (
     diff_snapshots,
     parse_assessment,
     read_snapshot,
+    inspect_one_historical_record,
 )
 
 REVIEW = "1" * 40
@@ -75,6 +76,16 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(rec.review_ref, REVIEW)
         self.assertTrue(rec.version_id.endswith(rec.sha256))
         self.assertIn(SHA, rec.assessment_url)
+
+    def test_sharded_canonical_path_accepted(self):
+        record, _ = parse_assessment("assessments/sa/sample.md", markup(), SHA)
+        self.assertTrue(record.assessment_url.endswith("/assessments/sa/sample.md"))
+        self.assertEqual(record.grades()["S1"], "A")
+
+    def test_wrong_shard_and_extra_nesting_rejected(self):
+        for path in ("assessments/xx/sample.md", "assessments/sa/extra/sample.md"):
+            with self.subTest(path=path), self.assertRaises(SourceError):
+                parse_assessment(path, markup(), SHA)
 
     def test_quoted_question_mark_also_accepted(self):
         rec, fixed = parse_assessment("assessments/sample.md", markup(s3star='"?"'), SHA)
@@ -193,6 +204,30 @@ class GitSnapshotTests(unittest.TestCase):
         git(self.repo, "commit", "-qm", "corrupt catalog")
         with self.assertRaises(SourceError):
             read_snapshot(self.repo, git(self.repo, "rev-parse", "HEAD"))
+
+    def test_sharded_snapshot_and_pinned_historical_reader(self):
+        old_record = inspect_one_historical_record(self.repo, self.second, "sample")
+        shard = self.repo / "assessments" / "sa"
+        shard.mkdir()
+        self.target.rename(shard / "sample.md")
+        self._commit_catalog(include=True)
+        pinned = git(self.repo, "rev-parse", "HEAD")
+        snapshot = read_snapshot(self.repo, pinned)
+        new_record = inspect_one_historical_record(self.repo, pinned, "sample")
+        self.assertEqual(snapshot.accepted["sample"].sha256, old_record.sha256)
+        self.assertEqual(new_record.review_ref, old_record.review_ref)
+        self.assertTrue(new_record.assessment_url.endswith("/assessments/sa/sample.md"))
+        self.assertTrue(old_record.assessment_url.endswith("/assessments/sample.md"))
+
+    def test_duplicate_flat_and_sharded_rejected(self):
+        shard = self.repo / "assessments" / "sa"
+        shard.mkdir()
+        (shard / "sample.md").write_bytes(self.target.read_bytes())
+        self._commit_catalog(include=True)
+        with self.assertRaisesRegex(SourceError, "duplicate"):
+            read_snapshot(self.repo, git(self.repo, "rev-parse", "HEAD"))
+        with self.assertRaisesRegex(SourceError, "exactly one"):
+            inspect_one_historical_record(self.repo, git(self.repo, "rev-parse", "HEAD"), "sample")
 
     def test_unpinned_head_rejected(self):
         with self.assertRaises(SourceError):
