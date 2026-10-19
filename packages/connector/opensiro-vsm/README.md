@@ -15,7 +15,7 @@ Import **canonically included** [OpenSiro VSM Index](https://github.com/opensiro
 
 ## Install and test
 
-Python 3.11–3.13 and Cognee **1.6.4** were used for validation.
+The package targets Python 3.11–3.13 and is verified with Cognee **1.6.4**. Clean Python 3.11 and Python 3.12 checks have been performed; Python 3.13 remains unverified.
 
 ```bash
 cd packages/connector/opensiro-vsm
@@ -78,14 +78,15 @@ python3.11 -m venv /tmp/opensiro-cognee-py311
   --commit 35bc8ab9ed4b42bb8955a6f0684a4f5529a05424
 ```
 
-**Actual completed wheel validation:** an independent Python 3.12 virtual
-environment installed the built wheel **without fetching dependencies**, using
-Cognee 1.6.4/DLT 1.30.0 already installed in a separate existing environment.
-This confirmed package import, pinned-source validation (533 included), native
-3-assessment import (69 graph nodes, 48 edges, 18 literal grades), and an
-independent new-process audit. Python 3.11 source syntax parsing passed, but a
-real Python 3.11 interpreter and fresh dependency installation were **not**
-available on the test host. Do not represent this as Python 3.11 runtime PASS.
+**Validated environments:** The B19 Python 3.12 wheel-origin smoke reused
+installed Cognee 1.6.4/DLT 1.30.0 dependencies and passed a real three-document
+import and independent audit. Subsequently, the [B20 GitHub-hosted clean Python
+3.11 run](https://github.com/opensiro/cognee-community/actions/runs/38942238109)
+successfully built the wheel, installed all declared dependencies in a new
+environment, passed `pip check`, ran **32/32 unit tests**, and completed real
+three-document ingestion and a separate-process audit (69 nodes, 48 edges,
+18 exact VSM function grades). B20 did not import the full corpus on Python
+3.11 or certify future Cognee versions.
 
 ## Boundaries
 
@@ -107,12 +108,12 @@ Track the contribution in [opensiro/upstream](https://github.com/opensiro/upstre
 
 Use an existing local checkout of the public OpenSiro Index. Choose an **exact**
 Git SHA and keep it constant for import and search. The review connector accepts
-both historical flat \`assessments/<id>.md\` and canonical sharded
-\`assessments/<first-two-chars>/<id>.md\` files, rejects mismatched directories
+both historical flat `assessments/<id>.md` and canonical sharded
+`assessments/<first-two-chars>/<id>.md` files, rejects mismatched directories
 and duplicate ID paths, and retains exact provenance. The path fix is part of
 this package (no out-of-tree patch required).
 
-\`\`\`bash
+```bash
 cd packages/connector/opensiro-vsm
 python -m pip install -e .
 git clone https://github.com/opensiro/vsm-harness-index /tmp/opensiro-index
@@ -129,18 +130,18 @@ python examples/search_and_inspect.py \
   --store-root /tmp/opensiro-cognee-example-new \
   --dataset opensiro-shards-demo-new \
   --query "game environment observation action feedback"
-\`\`\`
+```
 
-Choose a \`harness_id\` **actually present** in the resulting hits and rerun the
-last command with \`--inspect THAT_ID\` (and optionally \`--show-markdown\`).
+Choose a `harness_id` **actually present** in the resulting hits and rerun the
+last command with `--inspect THAT_ID` (and optionally `--show-markdown`).
 The read-only command audits an **existing** locally owned dataset, uses native
-Cognee \`CHUNKS_LEXICAL\`, prints unfiltered ranked hits and returns the pinned
+Cognee `CHUNKS_LEXICAL`, prints unfiltered ranked hits and returns the pinned
 canonical assessment, SHA256, six literal autonomy labels, original evidence
 bullets, and a pinned upstream Git tree link. The developer must inspect the
 relevant source files there: neither a hit nor a grade proves architectural
 suitability. It **does not** import or create a dataset during search.
 
-The example intentionally uses a small sample; \`--all\` imports all canonically
+The example intentionally uses a small sample; `--all` imports all canonically
 included records at the pinned revision and requires a larger fresh local store.
 Dataset names must be fresh for every import attempt; never reuse an attempted
 dataset after a failed import. The indexed retrieval covers **only six VSM
