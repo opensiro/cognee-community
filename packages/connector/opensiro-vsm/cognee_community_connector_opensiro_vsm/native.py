@@ -36,18 +36,21 @@ SECTION = re.compile(r"(?m)^## (S[1-5]\*?) [—-][^\n]*$")
 NEXT = re.compile(r"(?m)^##\s+")
 
 
+# Keep the Cognee DataPoint field declaration intact: the SDK reads this
+# mutable metadata default to construct native graph and identity fields.
+# Ruff RUF012 is suppressed locally rather than changing SDK semantics.
 class VSMFunction(DataPoint):
     key: str
     function: str
     autonomy: str
-    metadata: dict = {"index_fields": [], "identity_fields": ["key"]}
+    metadata: dict = {"index_fields": [], "identity_fields": ["key"]}  # noqa: RUF012
 
 
 class VSMEvidence(DataPoint):
     key: str
     text: str
     source_level: str
-    metadata: dict = {"index_fields": [], "identity_fields": ["key"]}
+    metadata: dict = {"index_fields": [], "identity_fields": ["key"]}  # noqa: RUF012
 
 
 class VSMAssessment(DataPoint):
@@ -61,7 +64,7 @@ class VSMAssessment(DataPoint):
     source_url: str
     function_states: list[VSMFunction]
     primary_evidence: list[VSMEvidence]
-    metadata: dict = {"index_fields": [], "identity_fields": ["key"]}
+    metadata: dict = {"index_fields": [], "identity_fields": ["key"]}  # noqa: RUF012
 
 
 class VSMHarness(DataPoint):
@@ -69,7 +72,7 @@ class VSMHarness(DataPoint):
     project_name: str
     repository: str
     assessments: list[VSMAssessment]
-    metadata: dict = {"index_fields": [], "identity_fields": ["key"]}
+    metadata: dict = {"index_fields": [], "identity_fields": ["key"]}  # noqa: RUF012
 
 
 def dlt_source(records: list[Record], tag: str):
