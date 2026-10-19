@@ -11,14 +11,14 @@ import hashlib
 import io
 import re
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
 
 import yaml
 
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
-QUESTION_SCALAR = re.compile(r"^(autonomy_[a-z0-9_]+:[ \t]*)\?[ \t]*$", re.M)
+QUESTION_SCALAR = re.compile(r"^(autonomy_[a-z0-9_]+:[ \t]*)\?[ \t]*$", re.MULTILINE)
 FUNCTIONS = ("S1", "S2", "S3", "S3_STAR", "S4", "S5")
 FIELD = {f: "autonomy_" + f.lower() for f in FUNCTIONS}
 ALLOWED = frozenset(("A", "B", "C", "P", "A(P)", "B(P)", "C(P)", "—", "?"))
@@ -147,7 +147,7 @@ def parse_assessment(
     # YAML can parse an all-numeric 40-character Git SHA as a number,
     # dropping leading zeros. Preserve only this exact valid SHA scalar.
     compatible = re.sub(
-        r"^(review_ref:[ \t]*)([0-9a-f]{40})[ \t]*$", r'\1"\2"', compatible, flags=re.M
+        r"^(review_ref:[ \t]*)([0-9a-f]{40})[ \t]*$", r'\1"\2"', compatible, flags=re.MULTILINE
     )
     try:
         meta = yaml.load(compatible, Loader=UniqueLoader)

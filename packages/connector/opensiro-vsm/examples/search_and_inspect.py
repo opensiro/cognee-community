@@ -23,34 +23,48 @@ def result_hits(response: object, snapshot: object) -> list[dict]:
     """Interpret native DocumentChunk responses without guessing IDs from prose."""
     results = []
     for group in response:
-        chunk_list = group.get("search_result") if isinstance(group, dict) else getattr(group, "search_result", None)
+        chunk_list = (
+            group.get("search_result")
+            if isinstance(group, dict)
+            else getattr(group, "search_result", None)
+        )
         if not isinstance(chunk_list, (list, tuple)):
             raise SourceError("Unexpected native lexical response; inspect Cognee SDK contract")
         for chunk in chunk_list:
             kind = chunk.get("type") if isinstance(chunk, dict) else getattr(chunk, "type", None)
             external_id = (
-                chunk.get("document_id") if isinstance(chunk, dict) else getattr(chunk, "document_id", None)
+                chunk.get("document_id")
+                if isinstance(chunk, dict)
+                else getattr(chunk, "document_id", None)
             )
             content = chunk.get("text") if isinstance(chunk, dict) else getattr(chunk, "text", None)
-            if kind != "DocumentChunk" or not isinstance(external_id, str) or not external_id.startswith(SOURCE_PREFIX):
+            if (
+                kind != "DocumentChunk"
+                or not isinstance(external_id, str)
+                or not external_id.startswith(SOURCE_PREFIX)
+            ):
                 raise SourceError("Native result lacks a canonical OpenSiro DocumentChunk identity")
-            identifier = external_id[len(SOURCE_PREFIX):]
+            identifier = external_id[len(SOURCE_PREFIX) :]
             if identifier not in snapshot.accepted or not isinstance(content, str):
                 raise SourceError("Native result is not in the pinned admitted source snapshot")
             record = snapshot.accepted[identifier]
             section = next((line for line in content.splitlines() if line.startswith("## S")), "")
-            results.append({
-                "rank": len(results) + 1,
-                "harness_id": identifier,
-                "project": record.project_name,
-                "section": section,
-                "excerpt": content[:320],
-                "assessment_url": record.assessment_url,
-            })
+            results.append(
+                {
+                    "rank": len(results) + 1,
+                    "harness_id": identifier,
+                    "project": record.project_name,
+                    "section": section,
+                    "excerpt": content[:320],
+                    "assessment_url": record.assessment_url,
+                }
+            )
     return results
 
 
-def source_detail(snapshot: object, identifier: str, returned: list[dict], show_markdown: bool) -> dict:
+def source_detail(
+    snapshot: object, identifier: str, returned: list[dict], show_markdown: bool
+) -> dict:
     """Allow inspection only of a real returned hit in the pinned snapshot."""
     if identifier not in {item["harness_id"] for item in returned}:
         raise SourceError("Inspection ID must be present among this query's native hits")
@@ -87,13 +101,16 @@ def configure_existing_store(root: Path) -> None:
 async def search_existing(snapshot: object, dataset: str, query: str, top_k: int) -> list[dict]:
     import cognee
     from cognee.modules.search.types import SearchType
+
     from cognee_community_connector_opensiro_vsm.audit import audit_dataset
     from cognee_community_connector_opensiro_vsm.native import source_data
 
     _, _, data_rows, docs = await source_data(dataset, SOURCE_TAG, existing_only=True)
     if not docs or len(docs) != len(data_rows):
         raise SourceError("Existing dataset is empty or contains unexpected source rows")
-    selected = tuple(sorted(key[len(SOURCE_PREFIX):] for key in docs if key.startswith(SOURCE_PREFIX)))
+    selected = tuple(
+        sorted(key[len(SOURCE_PREFIX) :] for key in docs if key.startswith(SOURCE_PREFIX))
+    )
     if len(selected) != len(docs) or any(x not in snapshot.accepted for x in selected):
         raise SourceError("Existing dataset source identities differ from pinned Index")
     audit = await audit_dataset(snapshot, selected, dataset, SOURCE_TAG, lexical=True)
@@ -133,7 +150,8 @@ def main() -> int:
             "all_native_hits_unfiltered": hits,
             "inspection": (
                 source_detail(snapshot, args.inspect, hits, args.show_markdown)
-                if args.inspect else None
+                if args.inspect
+                else None
             ),
             "warning": "Lexical results may be irrelevant; inspect pinned upstream code separately.",
         }

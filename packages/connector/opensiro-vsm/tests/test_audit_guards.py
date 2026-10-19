@@ -54,7 +54,9 @@ class AuditCountTests(unittest.TestCase):
         verify_node_type_counts(observed, expected)
 
     def test_unexpected_nonzero_evidence_is_rejected(self):
-        observed = Counter({"VSMHarness": 3, "VSMAssessment": 3, "VSMFunction": 18, "VSMEvidence": 1})
+        observed = Counter(
+            {"VSMHarness": 3, "VSMAssessment": 3, "VSMFunction": 18, "VSMEvidence": 1}
+        )
         expected = {"VSMHarness": 3, "VSMAssessment": 3, "VSMFunction": 18, "VSMEvidence": 0}
         with self.assertRaisesRegex(SourceError, "mismatched"):
             verify_node_type_counts(observed, expected)

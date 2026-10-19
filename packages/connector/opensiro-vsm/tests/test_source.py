@@ -14,9 +14,9 @@ from pathlib import Path
 from cognee_community_connector_opensiro_vsm.source import (
     SourceError,
     diff_snapshots,
+    inspect_one_historical_record,
     parse_assessment,
     read_snapshot,
-    inspect_one_historical_record,
 )
 
 REVIEW = "1" * 40
