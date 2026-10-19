@@ -97,7 +97,11 @@ jobs:
           import os
           from pathlib import Path
           root = Path(os.environ["RUNNER_TEMP"])
-          doc = json.loads((root / "import-result.json").read_text())
+          raw = (root / "import-result.json").read_text()
+          marker = '{\n  "status": "PASS_FRESH_LOCAL_COGNEE_IMPORT"'
+          start = raw.rfind(marker)
+          assert start >= 0, raw[-2000:]
+          doc, _ = json.JSONDecoder().raw_decode(raw[start:])
           assert doc["status"] == "PASS_FRESH_LOCAL_COGNEE_IMPORT", doc
           assert doc["documents"] == 3 and doc["graded_facts"] == 18, doc
           assert doc["graph_nodes"] == 60 and doc["graph_edges"] == 39, doc
@@ -121,7 +125,11 @@ jobs:
           import json
           import os
           from pathlib import Path
-          data = json.loads((Path(os.environ["RUNNER_TEMP"]) / "search-result.json").read_text())
+          raw_result = (Path(os.environ["RUNNER_TEMP"]) / "search-result.json").read_text()
+          marker = '{\n  "dataset": "opensiro-pr1-py311-shards"'
+          start = raw_result.rfind(marker)
+          assert start >= 0, raw_result[-2000:]
+          data, _ = json.JSONDecoder().raw_decode(raw_result[start:])
           assert data["dataset"] == "opensiro-pr1-py311-shards"
           assert len(data["all_native_hits_unfiltered"]) == 10
           assert data["inspection"]["harness_id"] == "ascension"
